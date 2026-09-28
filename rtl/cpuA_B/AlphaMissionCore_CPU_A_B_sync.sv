@@ -65,7 +65,15 @@ module AlphaMissionCore_CPU_A_B_sync
     output logic B1SY, //Back1 video scroll Y
     output logic SIDE_COLOR_BANK, //Unknown write registers
     output logic BACK1_TILE_COLOR_BANK,
-    output logic BACK1_VRAM_CSn
+    output logic BACK1_VRAM_CSn,
+
+    //RetroAchievements tap: memory writes of both CPUs (level strobes)
+    output wire  RA_A_WR,
+    output wire [15:0] RA_A_AD,
+    output wire  [7:0] RA_A_DO,
+    output wire  RA_B_WR,
+    output wire [15:0] RA_B_AD,
+    output wire  [7:0] RA_B_DO
 );
     logic VD_to_cpuAdbus; //LS32
     logic VD_to_cpuBdbus; //LS32
@@ -164,6 +172,10 @@ module AlphaMissionCore_CPU_A_B_sync
 
     assign CPUA_WR = cpuA_nWR;
     assign CPUA_RD = cpuA_nRD;
+
+    assign RA_A_WR = ~cpuA_nMR & ~cpuA_nWR;
+    assign RA_A_AD = cpuA_A;
+    assign RA_A_DO = cpuA_Dout;
     
     //---------------------------------------------
 
@@ -342,6 +354,10 @@ module AlphaMissionCore_CPU_A_B_sync
         .RFSH_n (cpuB_nRFSH),
         .HALT_n (cpuB_nHALT)
     );
+
+    assign RA_B_WR = ~cpuB_nMR & ~cpuB_nWR;
+    assign RA_B_AD = cpuB_A;
+    assign RA_B_DO = cpuB_Dout;
 
     //---------------------------------------------
     //------------ CPUB Memory Mapper -------------

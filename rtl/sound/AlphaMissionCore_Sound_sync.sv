@@ -22,7 +22,12 @@ module AlphaMissionCore_Sound_sync
     // combined output
     output  wire signed [15:0] snd,
     output  wire sample,
-    input wire [15:0] FRM_CNT
+    input wire [15:0] FRM_CNT,
+
+    //RetroAchievements tap: sound CPU memory writes (level strobe)
+    output  wire RA_WR,
+    output  wire [15:0] RA_AD,
+    output  wire [7:0] RA_DO
 );
     logic [7:0] latch_din;
 
@@ -171,6 +176,10 @@ module AlphaMissionCore_Sound_sync
         .WR(ioctl_wr)
     );
     //---------------------------------
+
+    assign RA_WR = ~nMREQ & ~nWR;
+    assign RA_AD = A;
+    assign RA_DO = cpu_dout;
 
     //--- HM6116-4 2Kx8 200ns SRAM ---
     logic [7:0] RAM_dout;

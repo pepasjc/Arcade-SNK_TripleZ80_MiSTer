@@ -216,7 +216,7 @@ assign VIDEO_ARY = (!ar) ? (orientation  ? 8'd3 : 8'd4) : 12'd0;
 // X   XXX XXXX  XXXXXXX
 `include "build_id.v" 
 localparam CONF_STR = {
-	"SNK_TripleZ80;;",
+	"RA_SNK_TripleZ80;;",
 	"-;",
     "P1,Screen Settings;",
     "P1-;",
@@ -358,7 +358,24 @@ wire no_rotate = orientation | direct_video;
 wire video_rotated;
 wire flip = status[15];
 
-screen_rotate screen_rotate (.*);
+// The rotation framebuffer shares the DDR port with the RetroAchievements
+// mirror (see below), so its DDRAM outputs go through the RA mux.
+wire  [7:0] rot_burstcnt, rot_be;
+wire [28:0] rot_addr;
+wire [63:0] rot_din;
+wire        rot_we, rot_rd;
+
+screen_rotate screen_rotate
+(
+	.*,
+	.DDRAM_CLK(),
+	.DDRAM_BURSTCNT(rot_burstcnt),
+	.DDRAM_ADDR(rot_addr),
+	.DDRAM_DIN(rot_din),
+	.DDRAM_BE(rot_be),
+	.DDRAM_WE(rot_we),
+	.DDRAM_RD(rot_rd)
+);
 
 arcade_video #(288,24) arcade_video
 (
@@ -400,6 +417,11 @@ wire [3:0] R,G,B;
 wire [15:0] snd;
 logic [15:0] PLAYER1, PLAYER2;
 
+// RetroAchievements tap (see RETROACHIEVEMENTS below)
+wire        ra_a_wr, ra_b_wr, ra_s_wr;
+wire [15:0] ra_a_ad, ra_b_ad, ra_s_ad;
+wire  [7:0] ra_a_do, ra_b_do, ra_s_do;
+
 SNK_TripleZ80 snk_TZ80_ASO
 (
 	.RESETn(~reset),
@@ -425,8 +447,87 @@ SNK_TripleZ80 snk_TZ80_ASO
 	.HSYNC(HSync),
 	.VSYNC(VSync),
 	.CE_PIXEL(ce_pix),
-	.snd(snd)
+	.snd(snd),
+	.RA_A_WR(ra_a_wr),
+	.RA_A_AD(ra_a_ad),
+	.RA_A_DO(ra_a_do),
+	.RA_B_WR(ra_b_wr),
+	.RA_B_AD(ra_b_ad),
+	.RA_B_DO(ra_b_do),
+	.RA_S_WR(ra_s_wr),
+	.RA_S_AD(ra_s_ad),
+	.RA_S_DO(ra_s_do)
 );
+
+///////////////////   RETROACHIEVEMENTS   //////////////////
+//
+// RAM mirror for the RetroAchievements fork of Main_MiSTer
+// (tz80_ra_mirror.v, from jotego's jtframe via the RA jtcores fork). The
+// memory writes of the three Z80s are shadowed in BRAM in FinalBurn Neo's
+// d_snk "All Ram" layout (tz80_ra_tap.sv; bg RAM, shared RAM, sprites,
+// text RAM and sound RAM = RA 0x0000-0x6FFF) and copied to DDR 0x3D000000
+// once per VBlank.
+//
+// The only other DDR client is the screen rotation framebuffer, which runs
+// on CLK_VIDEO (clk_53p6, the core clock too), ignores DDRAM_BUSY and writes
+// one pixel per CE_PIXEL while VGA_DE is high. So the mirror only starts a
+// copy once VGA_DE has been low for 4096 clocks (76 us, longer than any
+// HBlank): the copy (~3.6k qwords, ~70 us) then runs in the VBlank and the
+// framebuffer never loses a write. Held off during ROM download.
+
+wire [14:0] ra_wr_word;
+wire [15:0] ra_wr_din;
+wire  [1:0] ra_wr_be;
+
+tz80_ra_tap ra_tap
+(
+	.clk(clk_53p6),
+	.a_wr(ra_a_wr), .a_ad(ra_a_ad), .a_do(ra_a_do),
+	.b_wr(ra_b_wr), .b_ad(ra_b_ad), .b_do(ra_b_do),
+	.s_wr(ra_s_wr), .s_ad(ra_s_ad), .s_do(ra_s_do),
+	.ra_wr_word(ra_wr_word),
+	.ra_wr_din(ra_wr_din),
+	.ra_wr_be(ra_wr_be)
+);
+
+reg [11:0] ra_de_idle;
+always @(posedge clk_53p6) begin
+	if (VGA_DE) ra_de_idle <= 0;
+	else if (~&ra_de_idle) ra_de_idle <= ra_de_idle + 1'd1;
+end
+
+wire  [7:0] ra_burstcnt, ra_be;
+wire [28:0] ra_addr;
+wire [63:0] ra_din;
+wire        ra_we, ra_active;
+
+tz80_ra_mirror #(.AW(15)) ra_mirror
+(
+	.rst(reset),
+	.clk(clk_53p6),
+	.lvbl(~VBlank),
+	.hold(ioctl_download),
+	.start_ok(&ra_de_idle),
+	.wr_clk(clk_53p6),
+	.wr_word(ra_wr_word),
+	.wr_din(ra_wr_din),
+	.wr_be(ra_wr_be),
+	.active(ra_active),
+	.ddr_busy(DDRAM_BUSY),
+	.ddr_burstcnt(ra_burstcnt),
+	.ddr_addr(ra_addr),
+	.ddr_we(ra_we),
+	.ddr_be(ra_be),
+	.ddr_din(ra_din)
+);
+
+assign DDRAM_CLK      = clk_53p6;
+assign DDRAM_BURSTCNT = ra_active ? ra_burstcnt : rot_burstcnt;
+assign DDRAM_ADDR     = ra_active ? ra_addr     : rot_addr;
+assign DDRAM_DIN      = ra_active ? ra_din      : rot_din;
+assign DDRAM_BE       = ra_active ? ra_be       : rot_be;
+assign DDRAM_WE       = ra_active ? ra_we       : rot_we;
+assign DDRAM_RD       = ra_active ? 1'b0        : rot_rd;
 
 //color LUT for 4bit component to 8bit non-linear scale conversion (from LT Spice calculated values)
 logic [7:0] R8B, G8B, B8B;

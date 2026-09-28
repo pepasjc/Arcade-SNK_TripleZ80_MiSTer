@@ -42,7 +42,18 @@ module SNK_TripleZ80
 
     //sound output
     output wire signed [15:0] snd,
-    output wire sample
+    output wire sample,
+
+    //RetroAchievements tap: memory writes of the three Z80s (i_clk domain)
+    output wire RA_A_WR,
+    output wire [15:0] RA_A_AD,
+    output wire [7:0] RA_A_DO,
+    output wire RA_B_WR,
+    output wire [15:0] RA_B_AD,
+    output wire [7:0] RA_B_DO,
+    output wire RA_S_WR,
+    output wire [15:0] RA_S_AD,
+    output wire [7:0] RA_S_DO
 );
     logic VRD, AE, BE;
     
@@ -256,7 +267,14 @@ AlphaMissionCore_Clocks_Sync amc_clocks_sync(
         .B1SY(B1SY), //Back1 video scroll Y
         .SIDE_COLOR_BANK(SIDE_COLOR_BANK), //0XCE00 cpuA write registers (Unknown meaning in MAME)
         .BACK1_TILE_COLOR_BANK(BACK1_TILE_COLOR_BANK),
-        .BACK1_VRAM_CSn(BACK1_VRAM_CSn)
+        .BACK1_VRAM_CSn(BACK1_VRAM_CSn),
+
+        .RA_A_WR(RA_A_WR),
+        .RA_A_AD(RA_A_AD),
+        .RA_A_DO(RA_A_DO),
+        .RA_B_WR(RA_B_WR),
+        .RA_B_AD(RA_B_AD),
+        .RA_B_DO(RA_B_DO)
     );
 
 	 //logic signed [15:0] snd_out;
@@ -275,7 +293,11 @@ AlphaMissionCore_Clocks_Sync amc_clocks_sync(
         .MCODE(MCODE),
         .SND_BUSY(SND_BUSY),
         .snd(snd),
-        .sample(sample)
+        .sample(sample),
+
+        .RA_WR(RA_S_WR),
+        .RA_AD(RA_S_AD),
+        .RA_DO(RA_S_DO)
     );
 
     //Video Attributes
